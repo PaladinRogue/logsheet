@@ -1,24 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using Common.Api.ApplicationRegistration;
+using Common.Setup.Infrastructure.Messaging;
+using Common.Setup.Infrastructure.Persistence;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 
-namespace Apps.Logsheet
+namespace Logsheet.Api
 {
     public class Program
     {
         public static void Main(string[] args)
         {
-            CreateWebHostBuilder(args).Build().Run();
+            CreateWebHostBuilder(args)
+                .Build()
+                .ApplyMigrations()
+                .InitialiseMessaging()
+                .RegisterApplication()
+                .Run();
         }
 
         public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
             WebHost.CreateDefaultBuilder(args)
-                .UseStartup<Startup>();
+                .UseStartup<Startup>()
+                .UseKestrel()
+                .UseIISIntegration();
     }
 }

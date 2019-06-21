@@ -1,47 +1,90 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using AutoMapper;
+using Common.Api.Extensions;
+using Common.Api.Formats;
+using Common.Domain.DomainEvents;
+using Common.Domain.DomainEvents.Interfaces;
+using Common.Domain.Models.DataProtection;
+using Common.Messaging.Infrastructure;
+using Common.Messaging.Infrastructure.Interfaces;
+using Common.Setup;
+using Common.Setup.Infrastructure.Logging;
+using Logsheet.Setup;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using EventRegistration = Logsheet.Setup.EventRegistration;
+using MessageRegistration = Logsheet.Setup.MessageRegistration;
+using ServiceRegistration = Logsheet.Setup.ServiceRegistration;
 
-namespace Apps.Logsheet
+[assembly: ApiController]
+namespace Logsheet.Api
 {
-    public class Startup
+    public class Startup : Common.Api.Startup
     {
-        public Startup(IConfiguration configuration)
+        public Startup(IHostingEnvironment environment) : base(environment)
         {
-            Configuration = configuration;
         }
 
-        public IConfiguration Configuration { get; }
-
-        // This method gets called by the runtime. Use this method to add services to the container.
-        public void ConfigureServices(IServiceCollection services)
+        public IServiceProvider ConfigureServices(IServiceCollection services)
         {
-            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
+            CommonConfigureServices(services);
+
+            services.Configure<MvcOptions>(options =>
+            {
+                options
+                    .UseConcurrencyFilter()
+                    .UseBusinessExceptionFilter()
+                    .UseValidationExceptionFilter()
+                    .RequireHttps();
+            });
+
+            FormatRegistration.ConfigureJsonV1Format(services);
+
+            JwtRegistration.RegisterOptions(Configuration, services);
+
+            MessageRegistration.RegisterSubscribers(services);
+
+            EventRegistration.RegisterHandlers(services);
+
+            //TODO: Review making into extension methods 
+            ServiceRegistration.RegisterBuilders(services);
+            ServiceRegistration.RegisterValidators(services);
+            ServiceRegistration.RegisterApplicationServices(services);
+            ServiceRegistration.RegisterDomainServices(services);
+            ServiceRegistration.RegisterPersistenceServices(Configuration, services);
+            ServiceRegistration.RegisterProviders(services);
+            ServiceRegistration.RegisterAuthorisation(services);
+            ServiceRegistration.RegisterNotifications(services);
+
+            services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+
+            return services.BuildServiceProvider();
         }
 
-        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app,
+            ILoggerFactory loggerFactory,
+            IDataProtector dataProtector,
+            IDomainEventDispatcher domainEventDispatcher,
+            IMessageSender messageSender)
         {
-            if (env.IsDevelopment())
+            DataProtection.SetDataProtector(dataProtector);
+            DomainEvents.SetDomainEventDispatcher(domainEventDispatcher);
+            Message.SetMessageSender(messageSender);
+
+            if (Environment.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
             }
-            else
-            {
-                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-                app.UseHsts();
-            }
+
+            loggerFactory.AddLog4Net();
+
+            MiddlewareRegistration.Register(app);
 
             app.UseHttpsRedirection();
+            app.UseHsts();
             app.UseMvc();
         }
     }
